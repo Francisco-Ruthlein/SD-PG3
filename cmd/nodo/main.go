@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
+	
 	"net/http"
 	"net/rpc"
 	"os"
@@ -50,7 +50,7 @@ func main() {
 	}
 	miDireccion = fmt.Sprintf("%s:%s", hostname, puertoRPC)
 
-	// Inicializar nodos
+		// Inicializar nodos
 	gossipNodo = gossip.NuevoNodo(idNum, miDireccion)
 
 	seed := os.Getenv("SEED")

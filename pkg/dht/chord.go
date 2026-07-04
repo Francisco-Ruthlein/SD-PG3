@@ -1,7 +1,7 @@
 package dht
 
 import (
-	"net/rpc"
+	
 	"sync"
 )
 

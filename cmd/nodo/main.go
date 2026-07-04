@@ -215,37 +215,103 @@ func bucleAntiEntropia() {
 // TODO 18: Implementar manejadorEstado.
 // GET /estado devuelve JSON con node_id, miembros y finger_table.
 func manejadorEstado(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var ft []string
+	if chordNodo != nil {
+		// Convertimos el array de la finger table a un slice
+		ft = chordNodo.FingerTable[:]
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"node_id":      idNodo,
 		"miembros":     gossipNodo.ObtenerMiembros(),
-		"finger_table": []string{}, // STUB
+		"finger_table": ft,
 	})
 }
-
 // TODO 19: Implementar manejadorAlmacenar.
-// POST /almacenar recibe JSON {"clave": int, "valor": string}.
-// Si el nodo es responsable (chordNodo.EsResponsable), almacenar localmente.
-// Si no, reenviar al sucesor via RPC.
 func manejadorAlmacenar(w http.ResponseWriter, r *http.Request) {
-	// STUB
-	w.WriteHeader(http.StatusNotImplemented)
+	var req struct {
+		Clave int    `json:"clave"`
+		Valor string `json:"valor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// 1. Si somos responsables de la clave, la guardamos localmente
+	if chordNodo.EsResponsable(req.Clave) {
+		chordNodo.Almacenar(req.Clave, req.Valor)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":           "success",
+			"nodo_responsable": miDireccion,
+			"nodo_id":          idNum,
+		})
+		return
+	}
+	// 2. Si no, reenviamos la solicitud al sucesor vía RPC
+	c, err := rpc.Dial("tcp", chordNodo.Sucesor)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error conectando al sucesor: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer c.Close()
+	args := dht.ArgsStore{Clave: req.Clave, Valor: req.Valor}
+	var resp dht.RespStore
+	err = c.Call("ServicioChord.Almacenar", args, &resp)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error RPC al almacenar: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":           "success",
+		"nodo_responsable": resp.NodoResponsable,
+		"nodo_id":          resp.NodoID,
+	})
 }
-
 // TODO 20: Implementar manejadorBuscar.
-// GET /buscar?clave=X
-// Si responsable, devolver valor. Si no, reenviar o redirigir.
 func manejadorBuscar(w http.ResponseWriter, r *http.Request) {
-	// STUB
-	w.WriteHeader(http.StatusNotImplemented)
+	claveStr := r.URL.Query().Get("clave")
+	clave, err := strconv.Atoi(claveStr)
+	if err != nil {
+		http.Error(w, "Clave inválida", http.StatusBadRequest)
+		return
+	}
+	// 1. Si somos responsables de la clave, la leemos localmente
+	if chordNodo.EsResponsable(clave) {
+		valor, existe := chordNodo.Obtener(clave)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"valor":            valor,
+			"encontrado":       existe,
+			"nodo_responsable": miDireccion,
+			"nodo_id":          idNum,
+		})
+		return
+	}
+	// 2. Si no, reenviamos la consulta al sucesor vía RPC para que busque usando la Finger Table
+	c, err := rpc.Dial("tcp", chordNodo.Sucesor)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error conectando al sucesor: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer c.Close()
+	args := dht.ArgsLookup{Clave: clave}
+	var resp dht.RespLookup
+	err = c.Call("ServicioChord.Obtener", args, &resp)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error RPC al buscar: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"valor":            resp.Valor,
+		"encontrado":       resp.Encontrado,
+		"nodo_responsable": resp.NodoResponsable,
+		"nodo_id":          resp.NodoID,
+	})
 }
-
 // bucleEstabilizacionChord recalcula el anillo Chord cada 10 segundos.
-// Consulta a todos los miembros descubiertos por Gossip via RPC
-// (ServicioGossip.Identificarse) para obtener su ID lógico y Direccion
-// canónica, luego reordena los IDs y recalcula sucesor/predecesor.
-// Si un miembro deja de responder (crash), se excluye del recalculo y
-// el anillo se auto-repara en ~10s. Si Gossip descubre un nuevo nodo,
-// entra al anillo en la proxima estabilización.
 func bucleEstabilizacionChord() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()

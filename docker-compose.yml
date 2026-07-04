@@ -1,0 +1,80 @@
+version: "3.8"
+
+services:
+  nodo1:
+    build: .
+    hostname: nodo1
+    environment:
+      - NODO_ID=1
+      - HTTP_PORT=8080
+      - RPC_PORT=5000
+      - PEERS=50=nodo50:5000,100=nodo100:5000,200=nodo200:5000,255=nodo255:5000
+    ports:
+      - "8081:8080"
+      - "5001:5000"
+    networks:
+      - sd-net
+
+  nodo50:
+    build: .
+    hostname: nodo50
+    environment:
+      - NODO_ID=50
+      - HTTP_PORT=8080
+      - RPC_PORT=5000
+      - PEERS=1=nodo1:5000,100=nodo100:5000,200=nodo200:5000,255=nodo255:5000
+      - SEED=nodo1:5000
+    ports:
+      - "8082:8080"
+      - "5002:5000"
+    networks:
+      - sd-net
+
+  nodo100:
+    build: .
+    hostname: nodo100
+    environment:
+      - NODO_ID=100
+      - HTTP_PORT=8080
+      - RPC_PORT=5000
+      - PEERS=1=nodo1:5000,50=nodo50:5000,200=nodo200:5000,255=nodo255:5000
+      - SEED=nodo1:5000
+    ports:
+      - "8083:8080"
+      - "5003:5000"
+    networks:
+      - sd-net
+
+  nodo200:
+    build: .
+    hostname: nodo200
+    environment:
+      - NODO_ID=200
+      - HTTP_PORT=8080
+      - RPC_PORT=5000
+      - PEERS=1=nodo1:5000,50=nodo50:5000,100=nodo100:5000,255=nodo255:5000
+      - SEED=nodo1:5000
+    ports:
+      - "8084:8080"
+      - "5004:5000"
+    networks:
+      - sd-net
+
+  nodo255:
+    build: .
+    hostname: nodo255
+    environment:
+      - NODO_ID=255
+      - HTTP_PORT=8080
+      - RPC_PORT=5000
+      - PEERS=1=nodo1:5000,50=nodo50:5000,100=nodo100:5000,200=nodo200:5000
+      - SEED=nodo1:5000
+    ports:
+      - "8085:8080"
+      - "5005:5000"
+    networks:
+      - sd-net
+
+networks:
+  sd-net:
+    driver: bridge

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	
+	"net"
 	"net/http"
 	"net/rpc"
 	"os"
@@ -73,7 +73,33 @@ func main() {
 
 	// TODO 15: inicializar chordNodo con sucesor y predecesor calculados
 	// a partir de NODO_ID y PEERS (IDs ordenados en el anillo 0-255).
-	chordNodo = nil // STUB
+	// Construir el anillo con todos los nodos conocidos (yo + PEERS)
+todos := map[int]string{idNum: miDireccion}
+for id, dir := range pares {
+    todos[id] = dir
+}
+idsAnillo := []int{}
+for id := range todos {
+    idsAnillo = append(idsAnillo, id)
+}
+sort.Ints(idsAnillo)
+nAnillo := len(idsAnillo)
+miIdx := 0
+for i, v := range idsAnillo {
+    if v == idNum {
+        miIdx = i
+        break
+    }
+}
+predID := idsAnillo[(miIdx-1+nAnillo)%nAnillo]
+sucID := idsAnillo[(miIdx+1)%nAnillo]
+sucDir := todos[sucID]
+predDir := todos[predID]
+if nAnillo == 1 {
+    sucDir = miDireccion
+    predDir = miDireccion
+}
+chordNodo = dht.NuevoNodo(idNum, miDireccion, sucDir, sucID, predDir, predID)
 
 	// Endpoints HTTP
 	http.HandleFunc("/estado", manejadorEstado)
@@ -120,14 +146,70 @@ func parsearPares(peersEnv string) map[int]string {
 // Debe crear un listener TCP en puertoRPC, registrar un servicio RPC
 // que maneje intercambios de Gossip y lookups de DHT, y atender conexiones.
 func iniciarRPC() {
-	// COMPLETAR
+	// Creamos las instancias de los servicios RPC
+	sg := &gossip.ServicioGossip{Nodo: gossipNodo}
+	sc := &dht.ServicioChord{Nodo: chordNodo}
+	// Registramos ambos servicios en el servidor RPC de Go
+	if err := rpc.Register(sg); err != nil {
+		log.Fatalf("Error al registrar el servicio de Gossip RPC: %v", err)
+	}
+	if err := rpc.Register(sc); err != nil {
+		log.Fatalf("Error al registrar el servicio de Chord RPC: %v", err)
+	}
+	// Escuchamos conexiones TCP en el puerto RPC indicado
+	listener, err := net.Listen("tcp", ":"+puertoRPC)
+	if err != nil {
+		log.Fatalf("Error al crear listener RPC en el puerto %s: %v", puertoRPC, err)
+	}
+	defer listener.Close()
+	// Aceptamos conexiones concurrentemente
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Error al aceptar conexión RPC: %v", err)
+			continue
+		}
+		go rpc.ServeConn(conn)
+	}
 }
 
 // TODO 17: Implementar bucleAntiEntropia.
 // Cada 5 segundos, obtener un par con gossipNodo.AntiEntropia().
 // Si hay par, conectarse via RPC, intercambiar miembros y fusionar.
 func bucleAntiEntropia() {
-	// COMPLETAR
+		ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		// 1. Obtener un par aleatorio de la lista de miembros conocidos
+		par := gossipNodo.AntiEntropia()
+		if par == "" {
+			continue
+		}
+		// 2. Conectarse vía RPC al par seleccionado
+		c, err := rpc.Dial("tcp", par)
+		if err != nil {
+			log.Printf("[GOSSIP] Error al conectar con %s: %v", par, err)
+			continue
+		}
+		// 3. Preparar los datos a enviar
+		req := gossip.Intercambio{
+			Remitente: miDireccion,
+			Miembros:  gossipNodo.ObtenerMiembros(),
+		}
+		var resp gossip.Intercambio
+		// 4. Realizar la llamada RPC
+		err = c.Call("ServicioGossip.Intercambiar", req, &resp)
+		c.Close()
+		if err != nil {
+			log.Printf("[GOSSIP] Error en intercambio RPC con %s: %v", par, err)
+			continue
+		}
+		// 5. Fusionar los miembros devueltos en nuestro mapa local
+		gossipNodo.FusionarMiembros(resp.Miembros)
+		if resp.Remitente != "" {
+			gossipNodo.Unirse(resp.Remitente)
+		}
+	}
 }
 
 // TODO 18: Implementar manejadorEstado.

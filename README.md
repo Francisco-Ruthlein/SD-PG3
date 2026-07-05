@@ -8,9 +8,8 @@ Nodo que ejecuta Gossip (membresía P2P) + DHT Chord (lookup distribuido) simult
 
 ## Integrantes
 
-- Apellidos y Nombres 1
-- Apellidos y Nombres 2
-- Apellidos y Nombres 3
+Ruthlein Francisco
+
 
 ## Ejecucion
 

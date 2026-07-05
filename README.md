@@ -87,6 +87,3 @@ curl http://localhost:8080/estado
 - [ ] TODO 15-20: Nodo HTTP + RPC (`cmd/nodo/main.go`)
 - [ ] Docker Compose con 5 nodos
 
-## Captura de ejecución
-
-_(Adjuntar log mostrando convergencia de Gossip y lookups en DHT)_
